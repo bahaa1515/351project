@@ -45,6 +45,33 @@ def log_in():
 """server should keep track of all the users together maybe using multiple sockets(master socket)...UDP differ from TCP review chp.3
 + should be able to send messages between different users for each client there should be a port number different from the other """
 
+def add_product():
+    product_name = input("Enter product name: ")
+    description = input("Enter product description: ")
+    price = float(input("Enter product price: "))
+    category = input("Enter product category (e.g., electronics, fashion, etc.): ")
+    image_url = input("Enter image URL (or leave blank if none): ")
+    
+    client.send("add_product".encode('utf-8'))
+    client.send(product_name.encode('utf-8'))
+    client.send(description.encode('utf-8'))
+    client.send(str(price).encode('utf-8'))
+    client.send(category.encode('utf-8'))
+    client.send(image_url.encode('utf-8'))
+    print(client.recv(1024).decode('utf-8'))
+
+def view_products():
+    client.send("view_products".encode('utf-8'))
+    products = client.recv(4096).decode('utf-8')
+    print("Available products:\n", products)
+
+def buy_product():
+    product_id = input("Enter the product ID you wish to buy: ")
+    client.send("buy_product".encode('utf-8'))
+    client.send(product_id.encode('utf-8'))
+    confirmation = client.recv(1024).decode('utf-8')
+    print(confirmation)
+
 if(message.lower()=="register"):
     register()
 else:
