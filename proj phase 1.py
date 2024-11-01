@@ -57,6 +57,33 @@ def log_in():
     else:
         conn.send("Log in failed".encode('utf-8'))    
 
+#Jad Eido
+def add_product(conn, cursor, db):
+    product_name = conn.recv(1024).decode('utf-8')
+    description = conn.recv(1024).decode('utf-8')
+    price = float(conn.recv(1024).decode('utf-8'))
+    category = conn.recv(1024).decode('utf-8')
+    image_url = conn.recv(1024).decode('utf-8')
+    
+    product_id = random.randint(1000, 9999)
+    owner_id = 1234  # This should be the logged-in user's ID
+    cursor.execute("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, DATETIME('now'), ?, 1)", 
+                   (product_id, owner_id, product_name, price, description, category, image_url))
+    db.commit()
+    conn.send("Product added successfully.".encode('utf-8'))
+#Jad Eido
+def view_products(conn, cursor):
+    cursor.execute("SELECT * FROM products")
+    products = cursor.fetchall()
+    product_list = "\n".join([f"{p[0]}: {p[2]}, ${p[3]}, {p[4]}" for p in products])
+    conn.send(product_list.encode('utf-8'))
+#Jad Eido
+def buy_product(conn, cursor, db):
+    product_id = int(conn.recv(1024).decode('utf-8'))
+    cursor.execute("UPDATE products SET owner_online=0 WHERE product_id=?", (product_id,))
+    db.commit()
+    conn.send("Purchase successful! Collect from AUB post office on the specified date.".encode('utf-8'))
+
 if(request.lower()=="register"):
   register()
 else:
