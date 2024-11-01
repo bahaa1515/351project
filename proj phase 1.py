@@ -35,7 +35,9 @@ def register(conn):
                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
                           (email, password, first_name, middle_name, last_name, username, address,1))
         db.commit()
-        conn.send("Registration successful".encode('utf-8'))
+        user_i = cursor.lastrowid
+        user_id=str(user_i)
+        conn.send(f"Registration successful|{user_id}".encode('utf-8'))
     except sqlite3.IntegrityError:
         conn.send("Username already taken".encode('utf-8'))
 
@@ -51,10 +53,10 @@ def log_in(conn):
     user = cursor.fetchone()
     if user:
         user_id = user[0]
+        user_i=str(user_id)
         cursor.execute("UPDATE users SET owner_online = 1 WHERE user_id = ?", (user_id,))
         db.commit()
-        conn.send("Log in successful".encode('utf-8'))
-        conn.send(user_id.encode('utf-8'))
+        conn.send(f"Log in successful|{user_i}".encode('utf-8'))
     else:
         conn.send("Invalid login credentials".encode('utf-8'))
 
@@ -103,6 +105,7 @@ if __name__ == "__main__":
         print(f"Connected to {addr}")
         client_thread = threading.Thread(target=handle_client, args=(conn, addr))
         client_thread.start()
+
 
 #Jad Eido
 def add_product(conn, cursor, db):
