@@ -1,21 +1,34 @@
-#client
-
 import socket
 import threading
 import json
 
 def register(client):
-    user_email = input("Please enter your email: ")
-    user_password = input("Please enter your password: ")
-    first_name = input("Please enter your first name: ")
-    middle_name = input("Please enter your middle name (optional, press Enter to skip): ")
-    last_name = input("Please enter your last name: ")
-    username = input("Please choose a username: ")
-    address = input("Please enter your address: ")
+    try:
+        user_email = input("Please enter your email: ")
+        user_password = input("Please enter your password: ")
+        first_name = input("Please enter your first name: ")
+        middle_name = input("Please enter your middle name (optional, press Enter to skip): ")
+        last_name = input("Please enter your last name: ")
+        username = input("Please choose a username: ")
+        address = input("Please enter your address: ")
 
-    message = f"{user_email}|{user_password}|{first_name}|{middle_name}|{last_name}|{username}|{address}"
-    client.send(message.encode('utf-8'))
-    print("Registration information sent")
+        message = f"{user_email}|{user_password}|{first_name}|{middle_name}|{last_name}|{username}|{address}"
+        client.send(message.encode('utf-8'))
+        print("Registration information sent")
+        mse=client.recv(1024).decode('utf-8')
+        ms=mse.split('|')
+        if(ms[0]=="Registration successful"):
+            user_id=int(ms[1])
+            handle_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+            handle_thread.start()
+            handle_thread.join()
+        else:
+                print("Invalid login credentials.")    
+    except ConnectionAbortedError:
+        print("Connection was aborted by the server.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")           
+
 
 def log_in(client):
     try:
@@ -26,16 +39,15 @@ def log_in(client):
         client.send(msg.encode('utf-8'))
 
         message = client.recv(1024).decode('utf-8')
-        print("Response from server:", message)
+        mess=message.split('|')
+        print("Response from server:", mess)
         
-        if message == "Log in successful":
+        if mess[0] == "Log in successful":
+            user_id=int(mess[1])
+            handle_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+            handle_thread.start()
+            handle_thread.join() 
 
-            msge=input("Do you want to sell or buy a product? (respond by 'sell' or 'buy' only)")
-            user_id=client.recv(1024).decode('utf-8')
-            if(msge=="sell"):
-                sell_thread = threading.Thread(target=add_product, args=(client,user_id))
-                sell_thread.start()
-                sell_thread.join()    
         else:
             print("Invalid login credentials.")
     except ConnectionAbortedError:
@@ -64,6 +76,20 @@ def view_prod(client):
         for item in data:
             print(item)
 
+def handle_client2(client,user_id):
+    msge=input("Do you want to sell or buy a product? (respond by 'sell' or 'buy' or 'view' only)")
+    
+    if(msge=="sell"):
+        sell_thread = threading.Thread(target=add_product, args=(client,user_id))
+        sell_thread.start()
+        sell_thread.join() 
+    elif(msge=="view"):
+        view_thread = threading.Thread(target=view_prod, args=(client,))
+        view_thread.start()
+        view_thread.join()  
+    else:
+        handle_client2(client,user_id)
+
 def start(client):
     action = input("Type 'register' or 'log in': ").strip().lower()
 
@@ -89,7 +115,7 @@ def connect_to_server():
 
 if __name__ == "__main__":
     connect_to_server()
-
+    
 """get a list of products immediatly"""
 """can 1)view products of a particular owner
 2) check if product owner is online and communicate with him through !!server!!
