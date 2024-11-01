@@ -1,61 +1,108 @@
-#server
-import random
-import sqlite3
 import socket
-#Bahaa hamdan
-def generate_unique_user_id(cursor):
-    while True:
-        # Generate a random number between 1000 and 9999 inclusive => 4-digit
-        user_id = random.randint(1000, 9999)
+import threading
+import sqlite3
+import json
 
-        cursor.execute("SELECT COUNT(*) FROM users WHERE user_id = ?", (user_id,))
-        count = cursor.fetchone()[0]
 
-        if count == 0:  # User ID not in database already
-            return user_id  
-
-db=sqlite3.connect('products.db')
-cursor=db.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users(user_id INT, email TEXT, password TEXT, first_name TEXT, middle_name TEXT, last_name TEXT, username TEXT, creationdate DATETIME, address TEXT)") 
-
-# phone number cannot be int due to leading zeros and other factors 
-
-cursor.execute("CREATE TABLE IF NOT EXISTS products(product_id INT,user_id INT, product_name TEXT, price REAL,description TEXT, category TEXT, published_at DATETIME, image_url TEXT, owner_online INT)")
-#owner_online is int because there is only one boolean representation either 0 or 1 however text can be true/false or yes/no etc...
-#category may be used for cookies
-db.commit()
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind((socket.gethostbyname(socket.gethostname()),8036))
+server.bind((socket.gethostbyname(socket.gethostname()), 8036))
 server.listen()
 
-conn, addr = server.accept()
-request = conn.recv(1024).decode('utf-8')
+db = sqlite3.connect('products.db', check_same_thread=False)
+cursor = db.cursor()
+cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT, password TEXT,
+                    first_name TEXT, middle_name TEXT,
+                    last_name TEXT, username TEXT UNIQUE,
+                    creationdate DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    address TEXT, owner_online INTEGER DEFAULT 0)""")
+cursor.execute("""CREATE TABLE IF NOT EXISTS products(
+               product_id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INT, product_name TEXT, 
+               price REAL,description TEXT, category TEXT, 
+               published_at DATETIME, image_url TEXT)""")
+db.commit()
 
-#Bahaa hamdan
-def register():
-    user_email = conn.recv(1024).decode('utf-8')
-    user_password = conn.recv(1024).decode('utf-8')
-    first_name = conn.recv(1024).decode('utf-8')
-    middle_name = conn.recv(1024).decode('utf-8')
-    last_name = conn.recv(1024).decode('utf-8')
-    username = conn.recv(1024).decode('utf-8')
-    address = conn.recv(1024).decode('utf-8')
-    
-    
-    user_id=generate_unique_user_id(cursor)
-    cursor.execute("INSERT INTO users values(?,?,?,?,?,?,?, DATETIME('now'),?)", (user_id, user_email, user_password, first_name, middle_name, last_name, username, address))
-    db.commit()
+def register(conn):
+    data = conn.recv(1024).decode('utf-8')
+    details = data.split('|')
+    if len(details) != 7:
+        conn.send("Invalid registration data".encode('utf-8'))
+        return
+    email, password, first_name, middle_name, last_name, username, address = details
+    try:
+        cursor.execute("""INSERT INTO users(email, password, first_name, middle_name, last_name, username, address)
+                          VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                          (email, password, first_name, middle_name, last_name, username, address,1))
+        db.commit()
+        conn.send("Registration successful".encode('utf-8'))
+    except sqlite3.IntegrityError:
+        conn.send("Username already taken".encode('utf-8'))
 
-#Bahaa hamdan
-def log_in():
-    usernm=conn.recv(1024).decode('utf-8')
-    user_pass =conn.recv(1024).decode('utf-8')
-    cursor.execute("SELECT * FROM users WHERE username=? AND user_password=?",(usernm,user_pass))
-    user=cursor.fetchone()
+def log_in(conn):
+    data = conn.recv(1024).decode('utf-8')
+    credentials = data.split('|')
+    if len(credentials) != 2:
+        conn.send("Invalid login data".encode('utf-8'))
+        return
+    username, password = credentials
+
+    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+    user = cursor.fetchone()
     if user:
-        conn.send("Log in successfull".encode('utf-8'))
+        user_id = user[0]
+        cursor.execute("UPDATE users SET owner_online = 1 WHERE user_id = ?", (user_id,))
+        db.commit()
+        conn.send("Log in successful".encode('utf-8'))
+        conn.send(user_id.encode('utf-8'))
     else:
-        conn.send("Log in failed".encode('utf-8'))    
+        conn.send("Invalid login credentials".encode('utf-8'))
+
+def add_product(conn):
+    datae=conn.recv(1024)
+    data=json.loads(datae.decode('utf-8'))
+    infos=data.split('|')
+    user_id,productnm,desc,price,image,category=infos
+    cursor.execute(
+        "INSERT INTO users (user_id INT, product_name TEXT, price REAL,description TEXT, category TEXT, published_at DATETIME, image_url TEXT, owner_online INT) VALUES (?, ?, ?, ?, ?, DATETIME('now'),?)", 
+        (user_id, productnm, price, desc, category, image)
+    )
+    print("Products in the database:")
+    cursor.execute("SELECT * FROM users")
+    users = cursor.fetchall()
+    for user in users:
+        print(user)
+
+def viewprod(conn):
+    cursor.execute("SELECT product_name, price ,description, image_url FROM products")
+    rows = cursor.fetchall()
+    columns = ["column1", "column2"]
+    data = [dict(zip(columns, row)) for row in rows]
+    jason= json.dumps(data)
+    conn.sendall(jason.encode('utf-8'))
+    print("Data sent to client.")
+
+def handle_client(conn, addr):
+    try:
+        request = conn.recv(1024).decode('utf-8')
+        if request == "register":
+            register(conn)
+        elif request == "log in":
+            log_in(conn)
+        else:
+            conn.send("Invalid request".encode('utf-8'))
+    except Exception as e:
+        print(f"Error handling client {addr}: {e}")
+    finally:
+        conn.close()
+
+if __name__ == "__main__":
+    print("Server is running and listening for connections...")
+    while True:
+        conn, addr = server.accept()
+        print(f"Connected to {addr}")
+        client_thread = threading.Thread(target=handle_client, args=(conn, addr))
+        client_thread.start()
 
 #Jad Eido
 def add_product(conn, cursor, db):
@@ -78,11 +125,4 @@ def view_products(conn, cursor):
     product_list = "\n".join([f"{p[0]}: {p[2]}, ${p[3]}, {p[4]}" for p in products])
     conn.send(product_list.encode('utf-8'))
 
-if(request.lower()=="register"):
-  register()
-else:
-    log_in()
-    
 
-
-db.close
