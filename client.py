@@ -1,14 +1,10 @@
 #client
 
 import socket
+import threading
+import json
 
-client=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect((socket.gethostbyname(socket.gethostname()),8036))
-
-message=input("register or log in")
-client.send(message.encode('utf-8'))
-
-def register():
+def register(client):
     user_email = input("Please enter your email: ")
     user_password = input("Please enter your password: ")
     first_name = input("Please enter your first name: ")
@@ -16,24 +12,83 @@ def register():
     last_name = input("Please enter your last name: ")
     username = input("Please choose a username: ")
     address = input("Please enter your address: ")
-    
-    client.send(user_email.encode('utf-8'))
-    client.send(user_password.encode('utf-8'))
-    client.send(first_name.encode('utf-8'))
-    client.send(middle_name.encode('utf-8') if middle_name else ''.encode('utf-8'))
-    client.send(last_name.encode('utf-8'))
-    client.send(username.encode('utf-8'))
-    client.send(address.encode('utf-8'))
-    
-def log_in():
-    username = input("Please choose a username: ")
-    user_password = input("Please enter your password: ")
-    client.send(username.encode('utf-8'))
-    client.send(user_password.encode('utf-8'))
-    message=client.recv(1024).decode('utf-8')
-    print(message)
-    if(message=="Log in successfull"):
-        print("Do you want to sell or buy a product? (respond by 'sell' or 'buy' only)")
+
+    message = f"{user_email}|{user_password}|{first_name}|{middle_name}|{last_name}|{username}|{address}"
+    client.send(message.encode('utf-8'))
+    print("Registration information sent")
+
+def log_in(client):
+    try:
+        username = input("Please enter your username: ")
+        user_password = input("Please enter your password: ")
+        msg = f"{username}|{user_password}"
+        print(f"Sending login data: {msg}")
+        client.send(msg.encode('utf-8'))
+
+        message = client.recv(1024).decode('utf-8')
+        print("Response from server:", message)
+        
+        if message == "Log in successful":
+
+            msge=input("Do you want to sell or buy a product? (respond by 'sell' or 'buy' only)")
+            user_id=client.recv(1024).decode('utf-8')
+            if(msge=="sell"):
+                sell_thread = threading.Thread(target=add_product, args=(client,user_id))
+                sell_thread.start()
+                sell_thread.join()    
+        else:
+            print("Invalid login credentials.")
+    except ConnectionAbortedError:
+        print("Connection was aborted by the server.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+def add_product(client,user_id):
+    productnm=input("Enter product name: ")
+    desc=input("Enter product description: ")
+    price=input("Enter product price: ")
+    image=input("Enter product image URL: ")
+    category=input("Enter product category (e.g. Books, electronics...): ")
+    prodi=f"{user_id}|{productnm}|{desc}|{price}|{image}|{category}"
+    prod=json.dumps(prodi)
+    client.send(prod.encode('utf-8'))
+
+def view_prod(client):
+    data = client.recv(4096)
+    if data:
+        # Decode JSON data to display
+        data = json.loads(data.decode('utf-8'))
+        print("Received data from server:")
+        
+        # Display the received data
+        for item in data:
+            print(item)
+
+def start(client):
+    action = input("Type 'register' or 'log in': ").strip().lower()
+
+    if action == "register":
+        client.send(action.encode('utf-8'))
+        register_thread = threading.Thread(target=register, args=(client,))
+        register_thread.start()
+        register_thread.join()
+    elif action == "log in":
+        client.send(action.encode('utf-8'))
+        log_in_thread = threading.Thread(target=log_in, args=(client,))
+        log_in_thread.start()
+        log_in_thread.join()
+    else:
+        print("Invalid option. Please type 'register' or 'log in' only.")
+        start(client)
+
+def connect_to_server():
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((socket.gethostbyname(socket.gethostname()), 8036))
+    start(client)
+    client.close()
+
+if __name__ == "__main__":
+    connect_to_server()
 
 """get a list of products immediatly"""
 """can 1)view products of a particular owner
@@ -66,9 +121,6 @@ def view_products():
     print("Available products:\n", products)
 
 
-if(message.lower()=="register"):
-    register()
-else:
-    log_in()
+
 
 
