@@ -147,6 +147,11 @@ def view_products():
     print("Available products:\n", products)
 
 
-
+def buy_product():
+    product_id = input("Enter the product ID you wish to buy: ")
+    client.send("buy_product".encode('utf-8'))
+    client.send(product_id.encode('utf-8'))
+    confirmation = client.recv(1024).decode('utf-8')
+    print(confirmation)
 
 
