@@ -77,12 +77,6 @@ def view_products(conn, cursor):
     products = cursor.fetchall()
     product_list = "\n".join([f"{p[0]}: {p[2]}, ${p[3]}, {p[4]}" for p in products])
     conn.send(product_list.encode('utf-8'))
-#Jad Eido
-def buy_product(conn, cursor, db):
-    product_id = int(conn.recv(1024).decode('utf-8'))
-    cursor.execute("UPDATE products SET owner_online=0 WHERE product_id=?", (product_id,))
-    db.commit()
-    conn.send("Purchase successful! Collect from AUB post office on the specified date.".encode('utf-8'))
 
 if(request.lower()=="register"):
   register()
