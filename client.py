@@ -69,17 +69,39 @@ def log_in(client):
     except Exception as e:
         print(f"Unexpected error: {e}")
 
-def receive_messages(client_socket):
-    """Function to continuously receive and print messages from the server."""
+"""def initiate_chat(client):
+    username2 = input("Enter the username of the person you want to chat with: ")
+    client.send(username2.encode('utf-8'))
+    
+    response = client.recv(1024).decode('utf-8')
+    print(response)
+    if "Starting chat" in response:
+        chat_thread = threading.Thread(target=chat_session, args=(client,))
+        chat_thread.start()
+        chat_thread.join()
+
+def chat_session(client):
+    print("You can start chatting now. Type 'exit' to end the chat.")
+    while True:
+        message = input("You: ")
+        client.send(message.encode('utf-8'))
+        if message.lower() == "exit":
+            break
+        response = client.recv(1024).decode('utf-8')
+        print(f"Other: {response}")"""
+
+"""def receive_messages(client):
     while True:
         try:
-            message = client_socket.recv(1024).decode()
+            message = client.recv(1024).decode('utf-8')
             if not message:
                 break
             print(message)
         except:
-            print("Connection lost.")
-            break
+            print("Connection closed.")
+            break"""
+
+
 def add_product(client,user_id):
     productnm=input("Enter product name: ")
     desc=input("Enter product description: ")
@@ -119,27 +141,79 @@ def view_prod(client,user_id):
             print(item)
     handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
     handle2_thread.start()
-    handle2_thread.join()    
+    handle2_thread.join() 
+
+def buy_product(client,user_id):
+    for attempt in range(3):
+        try:
+            # Ask the user for the product name
+            product_name = input("Enter the name of the product you want to buy: ")
+            client.send(product_name.encode('utf-8'))
+
+            # Receive and display product details or an error message
+            message = client.recv(1024).decode('utf-8')
+            print(message)
+
+            if "Confirm" in message:
+                # Ask the user to confirm the purchase
+                confirmation = input("Type 'yes' to confirm purchase, or 'no' to cancel: ").strip().lower()
+                client.send(confirmation.encode('utf-8'))
+
+                # Receive the result of the purchase
+                result = client.recv(1024).decode('utf-8')
+                print(result)
+            else:
+                buy_thread = threading.Thread(target=buy_product, args=(client,user_id))
+                buy_thread.start()
+                buy_thread.join() 
+        except (ConnectionAbortedError, ConnectionResetError) as e:
+                print(f"Connection lost. Attempting to reconnect... ({attempt + 1}/3)")
+                time.sleep(2)  # Pause before reconnecting
+                # Reconnect client
+                client.close()
+                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client.connect((socket.gethostbyname(socket.gethostname()), 8036))
+        except Exception as e:
+            print(f"Error during purchase: {str(e)}")
+        handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+        handle2_thread.start()
+        handle2_thread.join() 
+
+def owner_view(client,owner_id,user_id):
+        client.send(owner_id.encode('utf-8'))  # Send the user_id to the server
+        data = client.recv(4096)
+        if data:
+            # Decode JSON data to display
+            data = json.loads(data.decode('utf-8'))
+            print("Received data from server:")
+            
+            # Display the received data
+            for item in data:
+                print(item)
+        handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+        handle2_thread.start()
+        handle2_thread.join()
 
 def handle_client2(client,user_id):
-    msge=input("Do you want to sell or buy a product? (respond by 'sell' or 'buy' or 'view' only)")
+    msge=input("Do you want to chat,sell,buy,view,or view owner specific products(respond by 'chat' or 'sell' or 'buy' or 'view' or 'owner' only)")
     client.send(msge.encode('utf-8'))
     if(msge=="sell"):
         sell_thread = threading.Thread(target=add_product, args=(client,user_id))
         sell_thread.start()
         sell_thread.join() 
     elif(msge=="buy"):
-        buy_thread = threading.Thread(target=buy_product, args=(conn,))
+        buy_thread = threading.Thread(target=buy_product, args=(client,user_id))
         buy_thread.start()
         buy_thread.join()    
-    elif(msge=="view products of an owner"):
-        view_thread = threading.Thread(target=view_prod, args=(client,user_id))
-        view_thread.start()
-        view_thread.join()  
+    elif(msge=="owner"):
+        owner_id = input("Enter the owner ID to view products: ")
+        owner_thread = threading.Thread(target= owner_view,args=(client,owner_id,user_id))
+        owner_thread.start()
+        owner_thread.join()
     elif(msge=="chat"):
-        chat_thread = threading.Thread(target=chat, args=(client,user_id))
+        chat_thread = threading.Thread(target= initiate_chat, args=(client,))
         chat_thread.start()
-        chat_thread.join()     
+        chat_thread.join()  
     else:
         handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
         handle2_thread.start()
@@ -172,43 +246,5 @@ def connect_to_server():
 
 if __name__ == "__main__":
     connect_to_server()
-  
-"""get a list of products immediatly"""
-"""can 1)view products of a particular owner
-2) check if product owner is online and communicate with him through !!server!!
-3)buy products then get a message to get them from AUB post office on a certain date
-4)add product the count is one// provide name, description, image, price and category(we suggest for him a number of categories and he should choose from them)
-5)if product bought can see buyer basic infos (name,...)
-"""    
-"""server should keep track of all the users together maybe using multiple sockets(master socket)...UDP differ from TCP review chp.3
-+ should be able to send messages between different users for each client there should be a port number different from the other """
-
-def add_product():
-    product_name = input("Enter product name: ")
-    description = input("Enter product description: ")
-    price = float(input("Enter product price: "))
-    category = input("Enter product category (e.g., electronics, fashion, etc.): ")
-    image_url = input("Enter image URL (or leave blank if none): ")
-    
-    client.send("add_product".encode('utf-8'))
-    client.send(product_name.encode('utf-8'))
-    client.send(description.encode('utf-8'))
-    client.send(str(price).encode('utf-8'))
-    client.send(category.encode('utf-8'))
-    client.send(image_url.encode('utf-8'))
-    print(client.recv(1024).decode('utf-8'))
-
-def view_products():
-    client.send("view_products".encode('utf-8'))
-    products = client.recv(4096).decode('utf-8')
-    print("Available products:\n", products)
-
-
-def buy_product():
-    product_id = input("Enter the product ID you wish to buy: ")
-    client.send("buy_product".encode('utf-8'))
-    client.send(product_id.encode('utf-8'))
-    confirmation = client.recv(1024).decode('utf-8')
-    print(confirmation)
 
 
