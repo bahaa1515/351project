@@ -1,7 +1,8 @@
 import socket
 import threading
 import json
-
+import time
+socket.setdefaulttimeout(300)
 def register(client):
     try:
         user_email = input("Please enter your email: ")
@@ -19,11 +20,16 @@ def register(client):
         ms=mse.split('|')
         if(ms[0]=="Registration successful"):
             user_id=int(ms[1])
-            handle_thread = threading.Thread(target=handle_client2, args=(client,user_id))
-            handle_thread.start()
-            handle_thread.join()
+            view_thread = threading.Thread(target=view_prod, args=(client,user_id))
+            view_thread.start()
+            view_thread.join()
+        elif(ms[0]=="Invalid registration data"):
+            print(ms[0])
+            return
         else:
-                print("Invalid login credentials.")    
+            handle_thread = threading.Thread(target=start, args=(client,))
+            handle_thread.start()
+            handle_thread.join()       
     except ConnectionAbortedError:
         print("Connection was aborted by the server.")
     except Exception as e:
@@ -43,13 +49,20 @@ def log_in(client):
         print("Response from server:", mess)
         
         if mess[0] == "Log in successful":
+            
             user_id=int(mess[1])
-            handle_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+            print(user_id)
+            view_thread = threading.Thread(target=view_prod, args=(client,user_id))
+            view_thread.start()
+            view_thread.join()
+             
+        elif(mess[0]=="Invalid login data"):
+            print(mess[0])
+            return
+        else:
+            handle_thread = threading.Thread(target=start, args=(client,))
             handle_thread.start()
             handle_thread.join() 
-
-        else:
-            print("Invalid login credentials.")
     except ConnectionAbortedError:
         print("Connection was aborted by the server.")
     except Exception as e:
@@ -62,10 +75,27 @@ def add_product(client,user_id):
     image=input("Enter product image URL: ")
     category=input("Enter product category (e.g. Books, electronics...): ")
     prodi=f"{user_id}|{productnm}|{desc}|{price}|{image}|{category}"
-    prod=json.dumps(prodi)
-    client.send(prod.encode('utf-8'))
+    for attempt in range(3):
+        try:
+            client.send(prodi.encode('utf-8'))
+            print("Product data sent successfully.")
+            handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+            handle2_thread.start()
+            handle2_thread.join()
+            break
+        except (ConnectionAbortedError, ConnectionResetError) as e:
+            print(f"Connection lost. Attempting to reconnect... ({attempt + 1}/3)")
+            time.sleep(2)  # Pause before reconnecting
+            # Reconnect client
+            client.close()
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client.connect((socket.gethostbyname(socket.gethostname()), 8036))
+        except Exception as e:
+            print(f"Failed to send data: {e} / program will stop")  
+            break 
+        
 
-def view_prod(client):
+def view_prod(client,user_id):
     data = client.recv(4096)
     if data:
         # Decode JSON data to display
@@ -75,20 +105,33 @@ def view_prod(client):
         # Display the received data
         for item in data:
             print(item)
+    handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+    handle2_thread.start()
+    handle2_thread.join()    
 
 def handle_client2(client,user_id):
     msge=input("Do you want to sell or buy a product? (respond by 'sell' or 'buy' or 'view' only)")
-    
+    client.send(msge.encode('utf-8'))
     if(msge=="sell"):
         sell_thread = threading.Thread(target=add_product, args=(client,user_id))
         sell_thread.start()
         sell_thread.join() 
-    elif(msge=="view"):
-        view_thread = threading.Thread(target=view_prod, args=(client,))
+    elif(msge=="buy"):
+        buy_thread = threading.Thread(target=buy_product, args=(conn,))
+        buy_thread.start()
+        buy_thread.join()    
+    elif(msge=="view products of an owner"):
+        view_thread = threading.Thread(target=view_prod, args=(client,user_id))
         view_thread.start()
         view_thread.join()  
+    elif(msge=="chat"):
+        chat_thread = threading.Thread(target=chat, args=(client,user_id))
+        chat_thread.start()
+        chat_thread.join()     
     else:
-        handle_client2(client,user_id)
+        handle2_thread = threading.Thread(target=handle_client2, args=(client,user_id))
+        handle2_thread.start()
+        handle2_thread.join()
 
 def start(client):
     action = input("Type 'register' or 'log in': ").strip().lower()
@@ -105,7 +148,9 @@ def start(client):
         log_in_thread.join()
     else:
         print("Invalid option. Please type 'register' or 'log in' only.")
-        start(client)
+        handle_thread = threading.Thread(target=start, args=(client,))
+        handle_thread.start()
+        handle_thread.join() 
 
 def connect_to_server():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -115,7 +160,7 @@ def connect_to_server():
 
 if __name__ == "__main__":
     connect_to_server()
-    
+  
 """get a list of products immediatly"""
 """can 1)view products of a particular owner
 2) check if product owner is online and communicate with him through !!server!!
