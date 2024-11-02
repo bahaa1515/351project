@@ -93,6 +93,45 @@ def log_in(conn,addr):
         handle_thread.start()
         handle_thread.join() 
 
+def check_specific_client_online(target_username):
+    # Check if the specific target client is online
+    cursor.execute("SELECT owner_online FROM users WHERE username=?", (target_username,))
+    result = cursor.fetchone()
+    return result is not None and result[0] == 1
+
+def initiate_chat(conn1, target_username):
+    # Check if the specific target client is online
+    if not check_specific_client_online(target_username):
+        conn1.send(f"Client '{target_username}' is not online.".encode('utf-8'))
+        return
+
+    # Wait for the specific target client to connect
+    conn2, addr2 = server.accept()
+    print(f"Connected to {addr2}")
+
+    # Inform both clients that the chat can begin
+    conn1.send(f"Chat initiated with {target_username}. You can start chatting!".encode('utf-8'))
+    conn2.send("You can start chatting!".encode('utf-8'))
+
+    # Function to handle communication between clients
+    def forward_messages(sender_conn, receiver_conn):
+        while True:
+            try:
+                message = sender_conn.recv(1024).decode()
+                if message.lower() == 'exit':
+                    break
+                receiver_conn.send(message.encode())
+            except:
+                break
+
+    # Create threads to handle the chat in both directions
+    thread1 = threading.Thread(target=forward_messages, args=(conn1, conn2))
+    thread2 = threading.Thread(target=forward_messages, args=(conn2, conn1))
+    thread1.start()
+    thread2.start()
+    thread1.join()
+    thread2.join()
+  
 def add_product(conn):
     data=conn.recv(1024).decode('utf-8')
     
