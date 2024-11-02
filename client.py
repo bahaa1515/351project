@@ -18,6 +18,7 @@ def register(client):
         print("Registration information sent")
         mse=client.recv(1024).decode('utf-8')
         ms=mse.split('|')
+        print(ms[0])
         if(ms[0]=="Registration successful"):
             user_id=int(ms[1])
             view_thread = threading.Thread(target=view_prod, args=(client,user_id))
