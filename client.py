@@ -69,7 +69,7 @@ def log_in(client):
     except Exception as e:
         print(f"Unexpected error: {e}")
 
-"""def initiate_chat(client):
+def initiate_chat(client):
     username2 = input("Enter the username of the person you want to chat with: ")
     client.send(username2.encode('utf-8'))
     
@@ -88,18 +88,7 @@ def chat_session(client):
         if message.lower() == "exit":
             break
         response = client.recv(1024).decode('utf-8')
-        print(f"Other: {response}")"""
-
-"""def receive_messages(client):
-    while True:
-        try:
-            message = client.recv(1024).decode('utf-8')
-            if not message:
-                break
-            print(message)
-        except:
-            print("Connection closed.")
-            break"""
+        print(f"Other: {response}")
 
 
 def add_product(client,user_id):
@@ -246,5 +235,6 @@ def connect_to_server():
 
 if __name__ == "__main__":
     connect_to_server()
+  
 
 
