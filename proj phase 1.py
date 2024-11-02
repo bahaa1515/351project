@@ -23,6 +23,8 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS products(
                published_at DATETIME, image_url TEXT)""")
 db.commit()
 
+clients = {}
+
 def register(conn,addr):
     data = conn.recv(1024).decode('utf-8')
     details = data.split('|')
@@ -93,45 +95,87 @@ def log_in(conn,addr):
         handle_thread.start()
         handle_thread.join() 
 
-def check_specific_client_online(target_username):
-    # Check if the specific target client is online
-    cursor.execute("SELECT owner_online FROM users WHERE username=?", (target_username,))
-    result = cursor.fetchone()
-    return result is not None and result[0] == 1
+def buy_product(conn):
+    try:
+        # Ask the client for the name of the product they want to buy
+        product_name = conn.recv(1024).decode('utf-8').strip()
 
-def initiate_chat(conn1, target_username):
-    # Check if the specific target client is online
-    if not check_specific_client_online(target_username):
-        conn1.send(f"Client '{target_username}' is not online.".encode('utf-8'))
-        return
+        # Check if the product exists in the database
+        cursor.execute("SELECT * FROM products WHERE product_name = ?", (product_name,))
+        product = cursor.fetchone()
 
-    # Wait for the specific target client to connect
-    conn2, addr2 = server.accept()
-    print(f"Connected to {addr2}")
+        if not product:
+            conn.send("Product not found.".encode('utf-8'))
+            return
 
-    # Inform both clients that the chat can begin
-    conn1.send(f"Chat initiated with {target_username}. You can start chatting!".encode('utf-8'))
-    conn2.send("You can start chatting!".encode('utf-8'))
+        # Send product details to the client for confirmation
+        conn.send(" Confirm purchase? (yes/no): ".encode('utf-8'))
+        confirmation = conn.recv(1024).decode('utf-8').strip().lower()
 
-    # Function to handle communication between clients
-    def forward_messages(sender_conn, receiver_conn):
-        while True:
-            try:
-                message = sender_conn.recv(1024).decode()
-                if message.lower() == 'exit':
-                    break
-                receiver_conn.send(message.encode())
-            except:
+        if confirmation == "yes":
+            # Remove the product from the database
+            cursor.execute("DELETE FROM products WHERE product_id = ?", (product[0],))
+            db.commit()
+            conn.send("Purchase successful. The product has been removed from the database.".encode('utf-8'))
+        else:
+            conn.send("Purchase canceled.".encode('utf-8'))
+    except Exception as e:
+        conn.send(f"Error during purchase: {str(e)}".encode('utf-8'))
+
+
+"""def handle_client3(client_socket):
+    while True:
+        try:
+            message = client_socket.recv(1024).decode('utf-8')
+            if not message:
                 break
+            
+            # The format for sending a private message is: /msg [recipient_username] [message]
+            if message.startswith("/msg"):
+                _, recipient, private_msg = message.split(" ", 2)
+                if recipient in clients:
+                    clients[recipient].send(f"[{username} -> You]: {private_msg}".encode('utf-8'))
+                    client_socket.send(f"[You -> {recipient}]: {private_msg}".encode('utf-8'))
+                else:
+                    client_socket.send(f"User {recipient} is not online.".encode('utf-8'))
+            else:
+                client_socket.send("Invalid command. Use /msg [username] [message] to send a private message.".encode('utf-8'))
+        except:
+            break
 
-    # Create threads to handle the chat in both directions
-    thread1 = threading.Thread(target=forward_messages, args=(conn1, conn2))
-    thread2 = threading.Thread(target=forward_messages, args=(conn2, conn1))
-    thread1.start()
-    thread2.start()
-    thread1.join()
-    thread2.join()
-  
+    # Remove disconnected user
+    print(f"{username} disconnected")
+    client_socket.close()
+    del clients[username]
+    print(f"{username} has left the chat.")"""
+
+
+"""def initiate_chat(conn):
+    target_username = conn.recv(1024).decode('utf-8').strip()
+
+    if target_username in clients:
+        target_conn = clients[target_username]
+        conn.send(f"User {target_username} is online. Starting chat...".encode('utf-8'))
+        target_conn.send(f"User wants to chat with you. Starting chat...".encode('utf-8'))
+        
+        # Start chat session
+        chat_thread = threading.Thread(target=chat_session, args=(conn, target_conn))
+        chat_thread.start()
+    else:
+        conn.send("User is not online or does not exist.".encode('utf-8'))
+
+def chat_session(conn1, conn2):
+    while True:
+        try:
+            message = conn1.recv(1024).decode('utf-8')
+            if message.lower() == "exit":
+                conn1.send("Chat ended.".encode('utf-8'))
+                conn2.send("Chat ended.".encode('utf-8'))
+                break
+            conn2.send(message.encode('utf-8'))
+        except:
+            break"""
+
 def add_product(conn):
     data=conn.recv(1024).decode('utf-8')
     
@@ -168,7 +212,19 @@ def viewprod(conn,addr):
     handle2_thread.start()
     handle2_thread.join()
 
-def handle_client2(conn,addr):
+def get_products_by_owner(conn, user_id):
+    cursor.execute("SELECT product_name, price, description, image_url FROM products WHERE user_id=?", (user_id,))
+    rows = cursor.fetchall()
+    columns = ["product_name", "price", "description", "image_url"]
+    data = [dict(zip(columns, row)) for row in rows]
+    jason = json.dumps(data)
+    conn.sendall(jason.encode('utf-8'))
+    print(f"Products for user ID {user_id} sent to client.")
+    handle2_thread = threading.Thread(target=handle_client2, args=(conn,addr))
+    handle2_thread.start()
+    handle2_thread.join()
+
+def handle_client2(conn,addr,):
     msg=conn.recv(1024).decode('utf-8')
     if(msg=="sell"):
         sell_thread = threading.Thread(target=add_product, args=(conn,))
@@ -178,14 +234,22 @@ def handle_client2(conn,addr):
         buy_thread = threading.Thread(target=buy_product, args=(conn,))
         buy_thread.start()
         buy_thread.join()    
-    elif(msg=="view products of an owner"):
-        view_thread = threading.Thread(target=viewprod, args=(conn,))
+    elif(msg=="owner"):
+        user_id = conn.recv(1024).decode('utf-8')  # Get user_id from client
+        owner_thread = threading.Thread(target=get_products_by_owner, args=(conn, user_id))  # Fetch products for the specific owner
+        owner_thread.start()
+        owner_thread.join()
+    elif(msg=="view"):
+        view_thread = threading.Thread(target=viewprod, args=(conn,addr))
         view_thread.start()
         view_thread.join()
     elif(msg=="chat"):
-        chat_thread = threading.Thread(target=chat, args=(conn,))
+        chat_thread = threading.Thread(target=handle_client3, args=(conn,))
         chat_thread.start()
-        chat_thread.join()        
+        chat_thread.join()       
+    elif(msg =="exit"):
+        conn.close()
+
     else:
         handle_client2(conn,addr)    
 
@@ -214,33 +278,5 @@ if __name__ == "__main__":
         print(f"Connected to {addr}")
         client_thread = threading.Thread(target=handle_client, args=(conn, addr))
         client_thread.start()
-
-
-#Jad Eido
-def add_product(conn, cursor, db):
-    product_name = conn.recv(1024).decode('utf-8')
-    description = conn.recv(1024).decode('utf-8')
-    price = float(conn.recv(1024).decode('utf-8'))
-    category = conn.recv(1024).decode('utf-8')
-    image_url = conn.recv(1024).decode('utf-8')
-    
-    product_id = random.randint(1000, 9999)
-    owner_id = 1234  # This should be the logged-in user's ID
-    cursor.execute("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, DATETIME('now'), ?, 1)", 
-                   (product_id, owner_id, product_name, price, description, category, image_url))
-    db.commit()
-    conn.send("Product added successfully.".encode('utf-8'))
-#Jad Eido
-def view_products(conn, cursor):
-    cursor.execute("SELECT * FROM products")
-    products = cursor.fetchall()
-    product_list = "\n".join([f"{p[0]}: {p[2]}, ${p[3]}, {p[4]}" for p in products])
-    conn.send(product_list.encode('utf-8'))
-
-def buy_product(conn, cursor, db):
-    product_id = int(conn.recv(1024).decode('utf-8'))
-    cursor.execute("UPDATE products SET owner_online=0 WHERE product_id=?", (product_id,))
-    db.commit()
-    conn.send("Purchase successful! Collect from AUB post office on the specified date.".encode('utf-8'))
 
 
