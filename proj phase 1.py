@@ -3,7 +3,7 @@ import threading
 import sqlite3
 import json
 
-
+socket.setdefaulttimeout(300)
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((socket.gethostbyname(socket.gethostname()), 8036))
 server.listen()
@@ -12,7 +12,7 @@ db = sqlite3.connect('products.db', check_same_thread=False)
 cursor = db.cursor()
 cursor.execute("""CREATE TABLE IF NOT EXISTS users(
                     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT, password TEXT,
+                    email TEXT UNIQUE, password TEXT,
                     first_name TEXT, middle_name TEXT,
                     last_name TEXT, username TEXT UNIQUE,
                     creationdate DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -23,14 +23,33 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS products(
                published_at DATETIME, image_url TEXT)""")
 db.commit()
 
-def register(conn):
+def register(conn,addr):
     data = conn.recv(1024).decode('utf-8')
     details = data.split('|')
     if len(details) != 7:
         conn.send("Invalid registration data".encode('utf-8'))
         return
     email, password, first_name, middle_name, last_name, username, address = details
+    
     try:
+        #Check if username exists in table
+        cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
+        if cursor.fetchone():
+            conn.send("Username already taken".encode('utf-8'))
+            handle_thread = threading.Thread(target=handle_client, args=(conn, addr))
+            handle_thread.start()
+            handle_thread.join()
+            return
+
+        # Check if email exists in table
+        cursor.execute("SELECT email FROM users WHERE email = ?", (email,))
+        if cursor.fetchone():
+            conn.send("Email already registered".encode('utf-8'))
+            handle_thread = threading.Thread(target=handle_client, args=(conn, addr))
+            handle_thread.start()
+            handle_thread.join()
+            return
+
         cursor.execute("""INSERT INTO users(email, password, first_name, middle_name, last_name, username, address)
                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
                           (email, password, first_name, middle_name, last_name, username, address,1))
@@ -38,10 +57,17 @@ def register(conn):
         user_i = cursor.lastrowid
         user_id=str(user_i)
         conn.send(f"Registration successful|{user_id}".encode('utf-8'))
-    except sqlite3.IntegrityError:
-        conn.send("Username already taken".encode('utf-8'))
+        view_thread = threading.Thread(target=viewprod, args=(conn,addr))
+        view_thread.start()
+        view_thread.join()
+    except Exception as e:
+        error_msg = f"Registration failed: {str(e)}"
+        conn.send(error_msg.encode('utf-8'))
+        handle_thread = threading.Thread(target=handle_client, args=(conn, addr))
+        handle_thread.start()
+        handle_thread.join()
 
-def log_in(conn):
+def log_in(conn,addr):
     data = conn.recv(1024).decode('utf-8')
     credentials = data.split('|')
     if len(credentials) != 2:
@@ -57,40 +83,84 @@ def log_in(conn):
         cursor.execute("UPDATE users SET owner_online = 1 WHERE user_id = ?", (user_id,))
         db.commit()
         conn.send(f"Log in successful|{user_i}".encode('utf-8'))
+        view_thread = threading.Thread(target=viewprod, args=(conn,addr))
+        view_thread.start()
+        view_thread.join()
+        
     else:
         conn.send("Invalid login credentials".encode('utf-8'))
+        handle_thread = threading.Thread(target=handle_client, args=(conn,addr))
+        handle_thread.start()
+        handle_thread.join() 
 
 def add_product(conn):
-    datae=conn.recv(1024)
-    data=json.loads(datae.decode('utf-8'))
+    data=conn.recv(1024).decode('utf-8')
+    
     infos=data.split('|')
     user_id,productnm,desc,price,image,category=infos
-    cursor.execute(
-        "INSERT INTO users (user_id INT, product_name TEXT, price REAL,description TEXT, category TEXT, published_at DATETIME, image_url TEXT, owner_online INT) VALUES (?, ?, ?, ?, ?, DATETIME('now'),?)", 
+    """cursor.execute(
+        "INSERT INTO users (user_id INT, product_name TEXT, price REAL,description TEXT, category TEXT, published_at DATETIME, image_url TEXT, owner_online INT) VALUES (?, ?, ?, ?, ?, DATETIME('now'),?,1)", 
         (user_id, productnm, price, desc, category, image)
+    )"""
+    cursor.execute(
+        """
+        INSERT INTO products 
+        (user_id, product_name, price, description, category, published_at, image_url) 
+        VALUES (?, ?, ?, ?, ?, DATETIME('now'), ?)
+        """, 
+        (user_id, productnm, float(price), desc, category, image)
     )
+    db.commit()
     print("Products in the database:")
-    cursor.execute("SELECT * FROM users")
+    cursor.execute("SELECT * FROM products")
     users = cursor.fetchall()
     for user in users:
         print(user)
 
-def viewprod(conn):
+def viewprod(conn,addr):
     cursor.execute("SELECT product_name, price ,description, image_url FROM products")
     rows = cursor.fetchall()
-    columns = ["column1", "column2"]
+    columns = ["product_name", "price", "description", "image_url"]
     data = [dict(zip(columns, row)) for row in rows]
     jason= json.dumps(data)
     conn.sendall(jason.encode('utf-8'))
     print("Data sent to client.")
+    handle2_thread = threading.Thread(target=handle_client2, args=(conn,addr))
+    handle2_thread.start()
+    handle2_thread.join()
+
+def handle_client2(conn,addr):
+    msg=conn.recv(1024).decode('utf-8')
+    if(msg=="sell"):
+        sell_thread = threading.Thread(target=add_product, args=(conn,))
+        sell_thread.start()
+        sell_thread.join() 
+    elif(msg=="buy"):
+        buy_thread = threading.Thread(target=buy_product, args=(conn,))
+        buy_thread.start()
+        buy_thread.join()    
+    elif(msg=="view products of an owner"):
+        view_thread = threading.Thread(target=viewprod, args=(conn,))
+        view_thread.start()
+        view_thread.join()
+    elif(msg=="chat"):
+        chat_thread = threading.Thread(target=chat, args=(conn,))
+        chat_thread.start()
+        chat_thread.join()        
+    else:
+        handle_client2(conn,addr)    
 
 def handle_client(conn, addr):
     try:
         request = conn.recv(1024).decode('utf-8')
         if request == "register":
-            register(conn)
+            register_thread = threading.Thread(target=register, args=(conn,addr))
+            register_thread.start()
+            register_thread.join()
         elif request == "log in":
-            log_in(conn)
+            login_thread = threading.Thread(target=log_in, args=(conn,addr))
+            login_thread.start()
+            login_thread.join()
         else:
             conn.send("Invalid request".encode('utf-8'))
     except Exception as e:
