@@ -50,8 +50,8 @@ def register(conn,addr):
             handle_thread.join()
             return
 
-        cursor.execute("""INSERT INTO users(email, password, first_name, middle_name, last_name, username, address)
-                          VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        cursor.execute("""INSERT INTO users(email, password, first_name, middle_name, last_name, username, address,owner_online)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                           (email, password, first_name, middle_name, last_name, username, address,1))
         db.commit()
         user_i = cursor.lastrowid
