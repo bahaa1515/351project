@@ -69,6 +69,17 @@ def log_in(client):
     except Exception as e:
         print(f"Unexpected error: {e}")
 
+def receive_messages(client_socket):
+    """Function to continuously receive and print messages from the server."""
+    while True:
+        try:
+            message = client_socket.recv(1024).decode()
+            if not message:
+                break
+            print(message)
+        except:
+            print("Connection lost.")
+            break
 def add_product(client,user_id):
     productnm=input("Enter product name: ")
     desc=input("Enter product description: ")
